@@ -7,11 +7,11 @@ import https from 'https';
 import http from 'http';
 
 // --- SERVER SETUP FOR RENDER (CRITICAL) ---
-// Render requires a web service to bind to a port within 60 seconds.
 const PORT = process.env.PORT || 3000;
+const START_TIME = new Date().toLocaleString('en-US', { timeZone: 'UTC' });
 
-// صفحة HTML بسيطة لعرض حالة البوت عند زيارة الرابط
-const HTML_STATUS_PAGE = `
+// صفحة HTML لعرض حالة البوت ووقت التشغيل
+const HTML_STATUS_PAGE = (uptime) => `
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
@@ -20,12 +20,13 @@ const HTML_STATUS_PAGE = `
     <title>BeeSenseBot Status</title>
     <style>
         body { font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        .card { background: white; padding: 2rem; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); text-align: center; max-width: 400px; }
+        .card { background: white; padding: 2rem; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); text-align: center; max-width: 400px; width: 90%; }
         .status { color: #16a34a; font-weight: bold; font-size: 1.25rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 1rem; }
         .dot { width: 10px; height: 10px; background: #16a34a; border-radius: 50%; display: inline-block; animation: pulse 2s infinite; }
         @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(22, 163, 74, 0); } 100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); } }
         h1 { color: #1e293b; margin: 0 0 0.5rem 0; }
-        p { color: #64748b; line-height: 1.5; }
+        p { color: #64748b; line-height: 1.5; margin-bottom: 0.5rem; }
+        .meta { font-size: 0.875rem; color: #94a3b8; background: #f1f5f9; padding: 0.5rem; border-radius: 0.5rem; margin-top: 1rem; }
     </style>
 </head>
 <body>
@@ -33,7 +34,11 @@ const HTML_STATUS_PAGE = `
         <div class="status"><span class="dot"></span> السيرفر يعمل بنشاط</div>
         <h1>BeeSenseBot</h1>
         <p>بوت تيليجرام لتحليل أمراض النحل يعمل الآن 24/7.</p>
-        <p style="font-size: 0.875rem; color: #94a3b8;">Running on Render • Key Rotation Active</p>
+        <div class="meta">
+            <div>Running on Render</div>
+            <div>Started: ${START_TIME} UTC</div>
+            <div>Keys Active: 4 (Rotation Mode)</div>
+        </div>
     </div>
 </body>
 </html>
@@ -41,7 +46,7 @@ const HTML_STATUS_PAGE = `
 
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/html' });
-  res.end(HTML_STATUS_PAGE);
+  res.end(HTML_STATUS_PAGE(START_TIME));
 });
 
 server.listen(PORT, () => {
@@ -51,7 +56,7 @@ server.listen(PORT, () => {
 // --- Configuration ---
 const TELEGRAM_TOKEN = "8599719651:AAF2CdACTyjWJ1ACHDbeNz07PkceMLk0_14"; 
 
-// 🔄 KEY ROTATION SYSTEM (HARDCODED FOR DEPLOYMENT EASE)
+// 🔄 KEY ROTATION SYSTEM
 const API_KEYS = [
   "AIzaSyBf_R1wkmkNegIAsQ5AjUMWGFgCfIL25wY", // Key 1
   "AIzaSyDhw-Z6hjI5Rzmh6o3A6R8aoUSy6sGvzKI", // Key 2
@@ -61,13 +66,11 @@ const API_KEYS = [
 
 let currentKeyIndex = 0;
 
-// Function to get the current AI client
 const getAIClient = () => {
   return new GoogleGenAI({ apiKey: API_KEYS[currentKeyIndex] });
 };
 
-// Ensure dataset directory structure (Using /tmp for read-only filesystems like Render)
-// On Render free tier, disk storage is ephemeral (wiped on restart).
+// Ensure dataset directory structure
 const DATASET_DIR = path.join(process.cwd(), 'bee_dataset');
 const IMAGES_DIR = path.join(DATASET_DIR, 'raw_images');
 const CORRECT_DIR = path.join(DATASET_DIR, 'verified_correct');
@@ -164,7 +167,6 @@ const processQueue = async () => {
   const { msg, chatId, photoId } = requestQueue.shift();
 
   try {
-    // Notify only if queue was long
     if (requestQueue.length > 2) {
       bot.sendMessage(chatId, "⏳ وصل دورك! جاري تحليل الصورة...");
     }
@@ -205,7 +207,6 @@ async function handleImageAnalysis(chatId, photoId) {
     
     await downloadImage(fileLink, localFilePath);
 
-    // Read file for Gemini
     const imageBuffer = fs.readFileSync(localFilePath);
     const base64Image = imageBuffer.toString('base64');
 
@@ -248,7 +249,6 @@ async function handleImageAnalysis(chatId, photoId) {
 
     const diagnosis = JSON.parse(aiResult.text);
 
-    // Save Record
     const record = {
       id: timestamp, filename: filename, current_path: localFilePath,
       diagnosis: diagnosis, user_feedback: "pending", timestamp: new Date().toISOString()
@@ -260,7 +260,6 @@ async function handleImageAnalysis(chatId, photoId) {
       return;
     }
 
-    // Format Report
     const treatments = diagnosis.recommendedTreatment || [];
     const treatmentText = Array.isArray(treatments) 
       ? treatments.map(t => `• ${t}`).join('\n') 
@@ -298,9 +297,8 @@ async function handleImageAnalysis(chatId, photoId) {
   }
 }
 
-// --- Bot Logic ---
 bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(msg.chat.id, "مرحباً! 🐝\nأنا BeeSenseBot.\nأرسل صورة للنحل للحصول على تقرير بيطري شامل.\n\n(يعمل 24/7 بفضل Render)");
+  bot.sendMessage(msg.chat.id, "مرحباً! 🐝\nأنا BeeSenseBot.\nأرسل صورة للنحل للحصول على تقرير بيطري شامل.");
 });
 
 bot.on('photo', async (msg) => {
