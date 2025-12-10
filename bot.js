@@ -37,7 +37,7 @@ const HTML_STATUS_PAGE = (uptime) => `
         <div class="meta">
             <div>Running on Render</div>
             <div>Started: ${START_TIME} UTC</div>
-            <div>Keys Active: 4 (Rotation Mode)</div>
+            <div>Keys Active: ${process.env.API_KEY_1 ? 'Environment Mode' : 'Direct Mode'}</div>
         </div>
     </div>
 </body>
@@ -57,16 +57,33 @@ server.listen(PORT, () => {
 const TELEGRAM_TOKEN = "8599719651:AAF2CdACTyjWJ1ACHDbeNz07PkceMLk0_14"; 
 
 // 🔄 KEY ROTATION SYSTEM
-const API_KEYS = [
-  "AIzaSyBf_R1wkmkNegIAsQ5AjUMWGFgCfIL25wY", // Key 1
-  "AIzaSyDhw-Z6hjI5Rzmh6o3A6R8aoUSy6sGvzKI", // Key 2
-  "AIzaSyDGgqXNGkbeBQ-iJGvcLNPF2cK4Y1HtbYA", // Key 3
-  "AIzaSyDXeYCWG2Dfanpw0aN7jd0GbF_GSGV4WmE"  // Key 4
-];
+// هام: يجب عليك وضع المفاتيح الجديدة هنا أو في إعدادات Render
+// Google قام بحظر المفاتيح القديمة لأنها نُشرت للعامة
+let API_KEYS = [
+  process.env.API_KEY_1,
+  process.env.API_KEY_2,
+  process.env.API_KEY_3,
+  process.env.API_KEY_4
+].filter(key => key); // تصفية المفاتيح الفارغة
+
+// إذا لم يتم العثور على مفاتيح في البيئة (للتجربة المحلية)، ضع مفاتيحك الجديدة هنا يدوياً
+if (API_KEYS.length === 0) {
+  API_KEYS = [
+    "ضع_مفتاحك_الجديد_1_هنا",
+    "ضع_مفتاحك_الجديد_2_هنا",
+    "ضع_مفتاحك_الجديد_3_هنا",
+    "ضع_مفتاحك_الجديد_4_هنا"
+  ];
+  console.log("⚠️ Using hardcoded keys. Ensure they are valid and not leaked.");
+}
 
 let currentKeyIndex = 0;
 
 const getAIClient = () => {
+  if (API_KEYS.length === 0 || API_KEYS[0].includes("ضع_مفتاحك")) {
+    console.error("❌ ERROR: No valid API Keys found! Please add API_KEY_1, API_KEY_2... in Render Environment Variables.");
+    throw new Error("Missing API Keys");
+  }
   return new GoogleGenAI({ apiKey: API_KEYS[currentKeyIndex] });
 };
 
@@ -82,10 +99,28 @@ const DATA_FILE = path.join(DATASET_DIR, 'data.json');
 });
 
 // Initialize Bot
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+// إضافة خيارات Polling لتجنب تعارض النسخ (Conflict Error)
+const bot = new TelegramBot(TELEGRAM_TOKEN, { 
+  polling: {
+    interval: 300,
+    autoStart: true,
+    params: {
+      timeout: 10
+    }
+  }
+});
 
 console.log("🐝 BeeSenseBot Telegram Bot is running...");
 console.log(`🚀 Ultimate Mode: ${API_KEYS.length} API Keys Loaded.`);
+
+// معالجة أخطاء Polling بذكاء
+bot.on('polling_error', (error) => {
+  if (error.code === 'ETELEGRAM' && error.message.includes('409 Conflict')) {
+    console.log("⚠️ تنبيه: توجد نسخة أخرى من البوت تعمل (ربما Colab). يرجى إغلاقها ليعمل هذا البوت بنجاح.");
+  } else {
+    console.log(`Polling Error: ${error.code}`);
+  }
+});
 
 // --- Knowledge Base ---
 const VETERINARY_KNOWLEDGE_BASE = `
@@ -239,6 +274,11 @@ async function handleImageAnalysis(chatId, photoId) {
           currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
           console.log(`✅ Using Key #${currentKeyIndex + 1}`);
           retries++;
+        } else if (e.message.includes("403") || e.message.includes("leaked")) {
+           console.error(`❌ Key #${currentKeyIndex + 1} REVOKED/LEAKED. Switching...`);
+           // Remove bad key logic could go here, but for now just switch
+           currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
+           retries++;
         } else {
           throw e; 
         }
@@ -293,7 +333,11 @@ async function handleImageAnalysis(chatId, photoId) {
 
   } catch (error) {
     console.error("Analysis Error:", error);
-    bot.sendMessage(chatId, "❌ نعتذر، حدث خطأ تقني. حاول مرة أخرى.");
+    if (error.message.includes("Missing API Keys")) {
+         bot.sendMessage(chatId, "❌ خطأ في الإعدادات: يرجى تحديث مفاتيح API في لوحة التحكم (Render Environment Variables).");
+    } else {
+         bot.sendMessage(chatId, "❌ نعتذر، حدث خطأ تقني. حاول مرة أخرى.");
+    }
   }
 }
 
