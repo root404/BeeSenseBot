@@ -1,0 +1,25 @@
+{
+  "name": "beesense-bot",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "vite",
+    "build": "vite build",
+    "bot": "node bot.js"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "lucide-react": "^0.344.0",
+    "react-router-dom": "^6.22.0",
+    "@google/genai": "^1.0.0",
+    "node-telegram-bot-api": "^0.66.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "^5.1.4",
+    "tailwindcss": "^3.4.1"
+  }
+}
