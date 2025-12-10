@@ -4,15 +4,46 @@ import process from 'process';
 import fs from 'fs';
 import path from 'path';
 import https from 'https';
-import http from 'http'; // Required for Render Health Check
+import http from 'http';
 
 // --- SERVER SETUP FOR RENDER (CRITICAL) ---
 // Render requires a web service to bind to a port within 60 seconds.
 const PORT = process.env.PORT || 3000;
+
+// صفحة HTML بسيطة لعرض حالة البوت عند زيارة الرابط
+const HTML_STATUS_PAGE = `
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BeeSenseBot Status</title>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .card { background: white; padding: 2rem; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); text-align: center; max-width: 400px; }
+        .status { color: #16a34a; font-weight: bold; font-size: 1.25rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 1rem; }
+        .dot { width: 10px; height: 10px; background: #16a34a; border-radius: 50%; display: inline-block; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(22, 163, 74, 0); } 100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); } }
+        h1 { color: #1e293b; margin: 0 0 0.5rem 0; }
+        p { color: #64748b; line-height: 1.5; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="status"><span class="dot"></span> السيرفر يعمل بنشاط</div>
+        <h1>BeeSenseBot</h1>
+        <p>بوت تيليجرام لتحليل أمراض النحل يعمل الآن 24/7.</p>
+        <p style="font-size: 0.875rem; color: #94a3b8;">Running on Render • Key Rotation Active</p>
+    </div>
+</body>
+</html>
+`;
+
 const server = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('BeeSenseBot is running 24/7!');
+  res.writeHead(200, { 'Content-Type': 'text/html' });
+  res.end(HTML_STATUS_PAGE);
 });
+
 server.listen(PORT, () => {
   console.log(`🌐 Health check server listening on port ${PORT}`);
 });
