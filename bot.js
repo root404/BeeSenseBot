@@ -26,18 +26,19 @@ const HTML_STATUS_PAGE = (uptime) => `
         @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(22, 163, 74, 0); } 100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); } }
         h1 { color: #1e293b; margin: 0 0 0.5rem 0; }
         p { color: #64748b; line-height: 1.5; margin-bottom: 0.5rem; }
-        .meta { font-size: 0.875rem; color: #94a3b8; background: #f1f5f9; padding: 0.5rem; border-radius: 0.5rem; margin-top: 1rem; }
+        .meta { font-size: 0.875rem; color: #94a3b8; background: #f1f5f9; padding: 0.5rem; border-radius: 0.5rem; margin-top: 1rem; text-align: left; direction: ltr; }
+        .env-badge { background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="card">
         <div class="status"><span class="dot"></span> السيرفر يعمل بنشاط</div>
         <h1>BeeSenseBot</h1>
-        <p>بوت تيليجرام لتحليل أمراض النحل يعمل الآن 24/7.</p>
+        <p>بوت تيليجرام لتحليل أمراض النحل يعمل الآن.</p>
         <div class="meta">
-            <div>Running on Render</div>
-            <div>Started: ${START_TIME} UTC</div>
-            <div>Keys Active: ${process.env.API_KEY_1 ? 'Environment Mode' : 'Direct Mode'}</div>
+            <div><strong>Environment:</strong> Render / Node.js</div>
+            <div><strong>Started:</strong> ${START_TIME}</div>
+            <div><strong>Mode:</strong> <span class="env-badge">SECURE ENV</span></div>
         </div>
     </div>
 </body>
@@ -53,37 +54,36 @@ server.listen(PORT, () => {
   console.log(`🌐 Health check server listening on port ${PORT}`);
 });
 
-// --- Configuration ---
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8599719651:AAF2CdACTyjWJ1ACHDbeNz07PkceMLk0_14"; 
+// --- Configuration (Strict Environment Variables) ---
 
-// معرف القناة الخاصة لتخزين البيانات (BeeSense Dataset)
+// 1. Telegram Token
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+if (!TELEGRAM_TOKEN) {
+    console.error("❌ FATAL ERROR: TELEGRAM_TOKEN is missing from Environment Variables!");
+    console.error("👉 Go to Render Dashboard -> Environment -> Add TELEGRAM_TOKEN");
+    process.exit(1); // Stop the app to prevent crash loops
+}
+
+// 2. Dataset Channel
 const DATASET_CHANNEL_ID = process.env.DATASET_CHANNEL_ID || "-1003359411043";
 
-// 🔄 KEY ROTATION SYSTEM
+// 3. API Keys (Strict Mode)
 let API_KEYS = [
   process.env.API_KEY_1,
   process.env.API_KEY_2,
   process.env.API_KEY_3,
   process.env.API_KEY_4
-].filter(key => key);
+].filter(key => key && key.trim().length > 0 && !key.includes("ضع_مفتاح"));
 
 if (API_KEYS.length === 0) {
-  API_KEYS = [
-    "ضع_مفتاحك_الجديد_1_هنا",
-    "ضع_مفتاحك_الجديد_2_هنا",
-    "ضع_مفتاحك_الجديد_3_هنا",
-    "ضع_مفتاحك_الجديد_4_هنا"
-  ];
-  console.log("⚠️ Using hardcoded keys. Ensure they are valid and not leaked.");
+  console.error("❌ FATAL ERROR: No valid API Keys found in Environment Variables!");
+  console.error("👉 Go to Render Dashboard -> Environment -> Add API_KEY_1, API_KEY_2, etc.");
+  process.exit(1);
 }
 
 let currentKeyIndex = 0;
 
 const getAIClient = () => {
-  if (API_KEYS.length === 0 || API_KEYS[0].includes("ضع_مفتاحك")) {
-    console.error("❌ ERROR: No valid API Keys found! Please add API_KEY_1, API_KEY_2... in Render Environment Variables.");
-    throw new Error("Missing API Keys");
-  }
   return new GoogleGenAI({ apiKey: API_KEYS[currentKeyIndex] });
 };
 
@@ -108,14 +108,18 @@ const bot = new TelegramBot(TELEGRAM_TOKEN, {
 });
 
 console.log("🐝 BeeSenseBot Telegram Bot is running...");
-console.log(`🚀 Ultimate Mode: ${API_KEYS.length} API Keys Loaded.`);
+console.log(`🚀 Secure Mode: ${API_KEYS.length} API Keys Loaded from Environment.`);
 console.log(`📂 Cloud Archiving Active: Channel ${DATASET_CHANNEL_ID}`);
 
-bot.on('polling_error', (error) => {
+bot.on('polling_error', async (error) => {
   if (error.code === 'ETELEGRAM' && error.message.includes('409 Conflict')) {
-    console.log("⚠️ تنبيه: توجد نسخة أخرى من البوت تعمل (ربما Colab). يرجى إغلاقها ليعمل هذا البوت بنجاح.");
+    console.log("⚠️ Conflict Error: Another bot instance is running.");
+    await bot.stopPolling();
+    setTimeout(() => {
+        bot.startPolling();
+    }, 5000);
   } else if (error.code === 'ETELEGRAM' && error.message.includes('401 Unauthorized')) {
-    console.log("❌ خطأ: التوكن غير صالح. يرجى تحديث TELEGRAM_TOKEN في إعدادات Render.");
+    console.error("❌ AUTH ERROR: Invalid Token. Check TELEGRAM_TOKEN in Render Environment.");
   } else {
     console.log(`Polling Error: ${error.code}`);
   }
@@ -177,22 +181,6 @@ const downloadImage = (url, filepath) => {
       }
     });
   });
-};
-
-const saveToDataset = (record) => {
-  let data = [];
-  if (fs.existsSync(DATA_FILE)) {
-    try {
-      data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-    } catch (e) { console.error("Error reading data.json", e); }
-  }
-  const index = data.findIndex(d => d.id === record.id);
-  if (index !== -1) {
-    data[index] = { ...data[index], ...record };
-  } else {
-    data.push(record);
-  }
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 };
 
 // --- QUEUE SYSTEM ---
@@ -292,12 +280,6 @@ async function handleImageAnalysis(chatId, photoId) {
 
     const diagnosis = JSON.parse(aiResult.text);
 
-    const record = {
-      id: timestamp, filename: filename, current_path: localFilePath,
-      diagnosis: diagnosis, user_feedback: "pending", timestamp: new Date().toISOString()
-    };
-    saveToDataset(record);
-
     if (!diagnosis.isBeeOrHive) {
       await bot.sendMessage(chatId, "⚠️ لم أتعرف على نحل أو خلية في الصورة.");
       return;
@@ -341,6 +323,23 @@ async function handleImageAnalysis(chatId, photoId) {
       }
     });
 
+    // Save record temporarily for callback
+    const record = {
+      id: timestamp, filename: filename, current_path: localFilePath,
+      diagnosis: diagnosis, user_feedback: "pending", timestamp: new Date().toISOString()
+    };
+    
+    // Simple in-memory storage for immediate feedback handling if filesystem is ephemeral
+    // but we write to file for simple persistence across short restarts
+    let data = [];
+    if (fs.existsSync(DATA_FILE)) {
+        try { data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch (e) {}
+    }
+    data.push(record);
+    // Keep file size manageable
+    if (data.length > 100) data = data.slice(-100);
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+
   } catch (error) {
     console.error("Analysis Error:", error);
     bot.sendMessage(chatId, "❌ نعتذر، حدث خطأ تقني. حاول مرة أخرى.");
@@ -369,7 +368,7 @@ bot.on('callback_query', async (query) => {
       message_id: query.message.message_id
     });
   } catch (e) {
-    console.log("Error removing markup (message likely old):", e.message);
+    console.log("Markup removal error:", e.message);
   }
 
   if (fs.existsSync(DATA_FILE)) {
@@ -379,16 +378,12 @@ bot.on('callback_query', async (query) => {
     if (index !== -1) {
       const record = data[index];
       const localPath = record.current_path;
-      
-      data[index].user_feedback = action;
-      fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 
       await bot.answerCallbackQuery(query.id, { text: "تم تسجيل ردك" });
       
       if (action === "correct") {
          await bot.sendMessage(chatId, `✅ شكراً! تم تأكيد التشخيص وحفظ الصورة في قاعدة البيانات.`);
          
-         // --- CLOUD ARCHIVING TO CHANNEL ---
          if (fs.existsSync(localPath)) {
              try {
                  const caption = `📁 #Confirmed_Data\n` +
@@ -400,25 +395,17 @@ bot.on('callback_query', async (query) => {
                                  `${JSON.stringify(record.diagnosis)}`;
 
                  const fileStream = fs.createReadStream(localPath);
-                 
-                 // Sending to the Dataset Channel
-                 await bot.sendPhoto(DATASET_CHANNEL_ID, fileStream, { 
-                     caption: caption.substring(0, 1024) // Telegram limits caption to 1024 chars
-                 });
-                 console.log("✅ Image archived to Telegram Channel successfully.");
-                 
+                 await bot.sendPhoto(DATASET_CHANNEL_ID, fileStream, { caption: caption.substring(0, 1024) });
+                 console.log("✅ Archived to Cloud Channel.");
              } catch (err) {
-                 console.error("❌ Failed to archive to channel:", err.message);
-                 // Don't fail the user interaction, just log server side
+                 console.error("❌ Archive Failed:", err.message);
              }
-         } else {
-             console.log("⚠️ File expired or deleted before archiving.");
          }
       } else {
-         await bot.sendMessage(chatId, `📝 شكراً لتنبيهنا، سنراجع الحالة.`);
+         await bot.sendMessage(chatId, `📝 شكراً لتنبيهنا.`);
       }
     } else {
-        await bot.sendMessage(chatId, "⚠️ السجل قديم جداً أو غير موجود.");
+        await bot.sendMessage(chatId, "⚠️ السجل غير موجود (ربما تم إعادة تشغيل السيرفر).");
     }
   }
 });
