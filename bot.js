@@ -113,7 +113,7 @@ console.log(`📂 Cloud Archiving Active: Channel ${DATASET_CHANNEL_ID}`);
 
 bot.on('polling_error', async (error) => {
   if (error.code === 'ETELEGRAM' && error.message.includes('409 Conflict')) {
-    console.log("⚠️ Conflict Error: Another bot instance is running.");
+    console.log("⚠️ Conflict Error: Another bot instance is running. Retrying in 5s...");
     await bot.stopPolling();
     setTimeout(() => {
         bot.startPolling();
@@ -125,32 +125,41 @@ bot.on('polling_error', async (error) => {
   }
 });
 
-// --- Knowledge Base ---
+// --- Knowledge Base - FORENSIC UPDATE v2 ---
 const VETERINARY_KNOWLEDGE_BASE = `
-أنت خبير عالمي في تربية النحل ومفتش مناحل.
-قواعد الفحص الشامل:
-1. **الملكة (Queen)**: ابحث عن نحلة طويلة البطن، أو علامات وجودها (بيض جديد عمودي في العيون).
-2. **الحضنة (Brood)**:
-   - **السليمة**: متراصة (Compact)، أغطية محدبة قليلاً بلون بني فاتح/أصفر، يرقات لؤلؤية بيضاء.
-   - **المريضة**: مثقوبة، غائرة، "طلقات خرطوش" (Spotty)، يرقات ملونة.
-3. **المخزون**:
-   - **عسل**: عيون مختومة بشمع أبيض/شفاف.
-   - **خبز النحل/حبوب اللقاح**: ألوان متعددة (أصفر، برتقالي) داخل العيون.
-4. **الأمراض (Diseases)**:
-   - **فاروا**: حشرات حمراء على النحل.
-   - **AFB**: أغطية مثقوبة، رائحة (افتراضية)، يرقات لزجة.
-   - **EFB**: يرقات ملتوية صفراء.
-   - **تكييس/تكلس**: يرقات محنطة.
-   - **عث الشمع**: خيوط عنكبوتية.
+⚠️ وضع الفحص الجنائي البيطري (Forensic Veterinary Mode):
+أنت الآن "مفتش جنائي" لأمراض النحل. مهمتك ليست التخمين، بل البحث عن الأدلة الدقيقة.
 
-قيم حالة الخلية العامة: (قوية، متوسطة، ضعيفة) بناءً على كثافة النحل وانتظام الحضنة.
+قاعدة ذهبية: "الشك يفسر لصالح المرض". إذا كانت الحضنة غير متراصة (Spotty Brood)، فالخلية مريضة أو ضعيفة، وليست سليمة.
+
+القواعد الصارمة:
+1. **نمط الحضنة (Brood Pattern)**:
+   - **سليم (STRONG)**: متراص جداً (Solid) كالسجادة، لا توجد فراغات.
+   - **مريض/ضعيف (WEAK/MODERATE)**: "طلقات خرطوش" (Shotgun pattern) - عيون فارغة كثيرة ومتناثرة وسط الحضنة المغلقة. هذا دليل قاطع على مشكلة (ملكة سيئة، فاروا، أو أمراض حضنة). لا تعطي تقييم "STRONG" أبداً إذا كان النمط متقطعاً.
+
+2. **الأغطية (Cappings)**:
+   - افحص الغطاء بدقة: هل هو مقعر/غائر (Sunken)؟ هل هو مثقوب (Perforated)؟ هل هو رطب/داكن؟ -> هذه علامات مؤكدة لمرض **AFB** (تعفن أمريكي).
+
+3. **اليرقات (Larvae)**:
+   - السليمة: بيضاء لؤلؤية ناصعة، رطبة، شكل حرف C في قاع العين.
+   - المريضة: ملتوية، صفراء، بنية، ذائبة (Ropey)، أو جافة (قشور).
+
+4. **المشاهدات (Detections)**:
+   - ابحث بدقة عن: الملكة، البيض (عمودي في قاع العين)، يرقات، حبوب لقاح (خبز النحل)، عسل مختوم.
+
+5. **القرارات**:
+   - إذا رأيت فاروا واحدة (نقطة حمراء): الحالة **MODERATE** أو **CRITICAL** (ليست HEALTHY).
+   - إذا رأيت أغطية مثقوبة: الحالة **CRITICAL** (AFB).
+   - إذا لم تجد بيضاً أو يرقات حديثة: الخلية قد تكون يتيمة (Queenless).
+
+تنبيه: كن دقيقاً جداً. لا تقل "Healthy" إلا إذا كانت الحضنة مثالية ومتراصة.
 `;
 
 const diagnosisSchema = {
   type: Type.OBJECT,
   properties: {
     isBeeOrHive: { type: Type.BOOLEAN },
-    hiveCondition: { type: Type.STRING, enum: ["STRONG", "MODERATE", "WEAK", "UNKNOWN"], description: "Overall colony strength based on bee density and brood pattern." },
+    hiveCondition: { type: Type.STRING, enum: ["STRONG", "MODERATE", "WEAK", "UNKNOWN"], description: "Overall colony strength based on bee density and brood pattern. Spotty brood = WEAK or MODERATE." },
     visualDetections: { 
       type: Type.ARRAY, 
       items: { type: Type.STRING }, 
@@ -256,7 +265,9 @@ async function handleImageAnalysis(chatId, photoId) {
           },
           config: { 
             responseMimeType: "application/json", 
-            responseSchema: diagnosisSchema 
+            responseSchema: diagnosisSchema,
+            temperature: 0.0, // Strict deterministic output
+            topK: 1
           }
         });
         break; 
@@ -361,7 +372,7 @@ bot.on('callback_query', async (query) => {
   const [action, id] = query.data.split('_');
   const timestampId = parseInt(id);
 
-  // إخفاء الأزرار فوراً لمنع التكرار
+  // إخفاء الأزرار فوراً
   try {
     await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
       chat_id: chatId,
@@ -386,17 +397,26 @@ bot.on('callback_query', async (query) => {
          
          if (fs.existsSync(localPath)) {
              try {
+                 // 1. Send the Photo first with a SHORT caption to avoid truncation
                  const caption = `📁 #Confirmed_Data\n` +
-                                 `🦠 Disease: ${record.diagnosis.conditionName}\n` +
-                                 `⚖️ Condition: ${record.diagnosis.hiveCondition}\n` +
-                                 `⚠️ Severity: ${record.diagnosis.severity}\n` +
-                                 `📝 Desc: ${record.diagnosis.description.substring(0, 100)}...\n\n` +
-                                 `🛠 JSON Data:\n` +
-                                 `${JSON.stringify(record.diagnosis)}`;
+                                 `🦠 ${record.diagnosis.conditionName}\n` +
+                                 `⚖️ ${record.diagnosis.hiveCondition}\n` +
+                                 `⚠️ ${record.diagnosis.severity}\n` +
+                                 `#${record.diagnosis.conditionName.replace(/\s/g, '_')} #BeeSense`;
 
                  const fileStream = fs.createReadStream(localPath);
-                 await bot.sendPhoto(DATASET_CHANNEL_ID, fileStream, { caption: caption.substring(0, 1024) });
-                 console.log("✅ Archived to Cloud Channel.");
+                 const sentMsg = await bot.sendPhoto(DATASET_CHANNEL_ID, fileStream, { caption: caption });
+                 
+                 // 2. Send the FULL JSON as a separate message (Reply) so it's never cut off
+                 const jsonString = JSON.stringify(record.diagnosis, null, 2);
+                 const jsonMessage = `📊 *Full Diagnosis Data (JSON):*\n\`\`\`json\n${jsonString}\n\`\`\``;
+                 
+                 await bot.sendMessage(DATASET_CHANNEL_ID, jsonMessage, { 
+                     parse_mode: "Markdown",
+                     reply_to_message_id: sentMsg.message_id
+                 });
+
+                 console.log("✅ Archived to Cloud Channel (Split Message).");
              } catch (err) {
                  console.error("❌ Archive Failed:", err.message);
              }
