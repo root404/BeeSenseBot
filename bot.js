@@ -153,6 +153,7 @@ const VETERINARY_KNOWLEDGE_BASE = `
 - اذكر اسم المرض العلمي.
 - حدد *بدقة* مكان العلامة في الصورة (مثلاً: "على الجناح الأيسر للنحلة في الوسط").
 - حدد درجة الخطورة (Mild, Moderate, Severe, Critical).
+- في قائمة 'symptoms': اذكر فقط العلامات المرئية بالعين المجردة في الصورة. لا تذكر أعراضاً مفترضة غير مرئية.
 - اكتب بروتوكول علاج كيميائي (مثل Amitraz/Formic) وعضوي/وقائي.
 `;
 
@@ -253,7 +254,7 @@ async function handleImageAnalysis(chatId, photoId) {
           contents: {
             parts: [
               { inlineData: { mimeType: "image/jpeg", data: base64Image } },
-              { text: `Analyze as Ph.D. Pathologist. ${VETERINARY_KNOWLEDGE_BASE}. Output JSON Arabic.` }
+              { text: `Analyze as Ph.D. Pathologist. ${VETERINARY_KNOWLEDGE_BASE}. Output JSON Arabic. IMPORTANT: In 'symptoms' array, ONLY list strictly visible visual markers in the image (e.g. 'spotted wings', 'sunken caps'). Do NOT list inferred/non-visible symptoms like 'weakness' or 'low honey'.` }
             ]
           },
           config: { 
@@ -343,7 +344,7 @@ async function handleImageAnalysis(chatId, photoId) {
 }
 
 bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(msg.chat.id, "👨‍⚕️ *BeeSenseBot (Ph.D. Edition)*\n\nأرسل صورة للنحل أو الحضنة ليتم تحليلها بدقة علمية فائقة.", {parse_mode: 'Markdown'});
+  bot.sendMessage(msg.chat.id, "👨‍⚕️ *BeeSenseBot (Ph.D. Edition)*\n\nأرسل صورة للفحص الجنائي الدقيق للأمراض والطفيليات.\n(سيتم تجاهل قوة الخلية والملكة).", {parse_mode: 'Markdown'});
 });
 
 bot.on('photo', async (msg) => {
@@ -395,6 +396,7 @@ bot.on('callback_query', async (query) => {
                  });
              } catch (err) {
                  console.error("Archive Failed:", err.message);
+                 bot.sendMessage(chatId, "⚠️ فشل في الأرشفة السحابية.");
              }
          }
       } else {
