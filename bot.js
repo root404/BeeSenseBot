@@ -54,19 +54,19 @@ server.listen(PORT, () => {
 });
 
 // --- Configuration ---
-const TELEGRAM_TOKEN = "8599719651:AAF2CdACTyjWJ1ACHDbeNz07PkceMLk0_14"; 
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8599719651:AAF2CdACTyjWJ1ACHDbeNz07PkceMLk0_14"; 
+
+// معرف القناة الخاصة لتخزين البيانات (BeeSense Dataset)
+const DATASET_CHANNEL_ID = process.env.DATASET_CHANNEL_ID || "-1003359411043";
 
 // 🔄 KEY ROTATION SYSTEM
-// هام: يجب عليك وضع المفاتيح الجديدة هنا أو في إعدادات Render
-// Google قام بحظر المفاتيح القديمة لأنها نُشرت للعامة
 let API_KEYS = [
   process.env.API_KEY_1,
   process.env.API_KEY_2,
   process.env.API_KEY_3,
   process.env.API_KEY_4
-].filter(key => key); // تصفية المفاتيح الفارغة
+].filter(key => key);
 
-// إذا لم يتم العثور على مفاتيح في البيئة (للتجربة المحلية)، ضع مفاتيحك الجديدة هنا يدوياً
 if (API_KEYS.length === 0) {
   API_KEYS = [
     "ضع_مفتاحك_الجديد_1_هنا",
@@ -90,16 +90,13 @@ const getAIClient = () => {
 // Ensure dataset directory structure
 const DATASET_DIR = path.join(process.cwd(), 'bee_dataset');
 const IMAGES_DIR = path.join(DATASET_DIR, 'raw_images');
-const CORRECT_DIR = path.join(DATASET_DIR, 'verified_correct');
-const WRONG_DIR = path.join(DATASET_DIR, 'verified_wrong');
 const DATA_FILE = path.join(DATASET_DIR, 'data.json');
 
-[DATASET_DIR, IMAGES_DIR, CORRECT_DIR, WRONG_DIR].forEach(dir => {
+[DATASET_DIR, IMAGES_DIR].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
 // Initialize Bot
-// إضافة خيارات Polling لتجنب تعارض النسخ (Conflict Error)
 const bot = new TelegramBot(TELEGRAM_TOKEN, { 
   polling: {
     interval: 300,
@@ -112,11 +109,13 @@ const bot = new TelegramBot(TELEGRAM_TOKEN, {
 
 console.log("🐝 BeeSenseBot Telegram Bot is running...");
 console.log(`🚀 Ultimate Mode: ${API_KEYS.length} API Keys Loaded.`);
+console.log(`📂 Cloud Archiving Active: Channel ${DATASET_CHANNEL_ID}`);
 
-// معالجة أخطاء Polling بذكاء
 bot.on('polling_error', (error) => {
   if (error.code === 'ETELEGRAM' && error.message.includes('409 Conflict')) {
     console.log("⚠️ تنبيه: توجد نسخة أخرى من البوت تعمل (ربما Colab). يرجى إغلاقها ليعمل هذا البوت بنجاح.");
+  } else if (error.code === 'ETELEGRAM' && error.message.includes('401 Unauthorized')) {
+    console.log("❌ خطأ: التوكن غير صالح. يرجى تحديث TELEGRAM_TOKEN في إعدادات Render.");
   } else {
     console.log(`Polling Error: ${error.code}`);
   }
@@ -124,27 +123,42 @@ bot.on('polling_error', (error) => {
 
 // --- Knowledge Base ---
 const VETERINARY_KNOWLEDGE_BASE = `
-قواعد التشخيص البيطري للنحل:
-1. **فاروا (Varroa Mites)**: حشرات حمراء/بنية بيضاوية. أجنحة مشوهة (DWV). خطورة: عالية.
-2. **تعفن الحضنة الأمريكي (AFB)**: أغطية غائرة/مثقوبة، يرقات بنية لزجة (اختبار العود)، رائحة سمكية. خطورة: حرجة جداً (إعدام وحرق).
-3. **تعفن الحضنة الأوروبي (EFB)**: يرقات ملتوية صفراء، غير مطاطية. خطورة: متوسطة/عالية.
-4. **تكلس الحضنة (Chalkbrood)**: يرقات محنطة بيضاء/رمادية. خطورة: متوسطة.
-5. **نوزيما (Nosema)**: انتفاخ البطن، إسهال على الإطارات. خطورة: عالية.
-6. **خفساء الخلية (SHB)**: يرقات ديدان تخمر العسل. خطورة: عالية.
+أنت خبير عالمي في تربية النحل ومفتش مناحل.
+قواعد الفحص الشامل:
+1. **الملكة (Queen)**: ابحث عن نحلة طويلة البطن، أو علامات وجودها (بيض جديد عمودي في العيون).
+2. **الحضنة (Brood)**:
+   - **السليمة**: متراصة (Compact)، أغطية محدبة قليلاً بلون بني فاتح/أصفر، يرقات لؤلؤية بيضاء.
+   - **المريضة**: مثقوبة، غائرة، "طلقات خرطوش" (Spotty)، يرقات ملونة.
+3. **المخزون**:
+   - **عسل**: عيون مختومة بشمع أبيض/شفاف.
+   - **خبز النحل/حبوب اللقاح**: ألوان متعددة (أصفر، برتقالي) داخل العيون.
+4. **الأمراض (Diseases)**:
+   - **فاروا**: حشرات حمراء على النحل.
+   - **AFB**: أغطية مثقوبة، رائحة (افتراضية)، يرقات لزجة.
+   - **EFB**: يرقات ملتوية صفراء.
+   - **تكييس/تكلس**: يرقات محنطة.
+   - **عث الشمع**: خيوط عنكبوتية.
+
+قيم حالة الخلية العامة: (قوية، متوسطة، ضعيفة) بناءً على كثافة النحل وانتظام الحضنة.
 `;
 
 const diagnosisSchema = {
   type: Type.OBJECT,
   properties: {
     isBeeOrHive: { type: Type.BOOLEAN },
+    hiveCondition: { type: Type.STRING, enum: ["STRONG", "MODERATE", "WEAK", "UNKNOWN"], description: "Overall colony strength based on bee density and brood pattern." },
+    visualDetections: { 
+      type: Type.ARRAY, 
+      items: { type: Type.STRING }, 
+      description: "List of items seen: e.g., 'Queen', 'Eggs', 'Capped Brood', 'Honey', 'Pollen', 'Varroa Mites'." 
+    },
     conditionName: { type: Type.STRING },
     severity: { type: Type.STRING, enum: ["HEALTHY", "LOW", "MODERATE", "CRITICAL", "UNKNOWN"] },
     description: { type: Type.STRING },
-    symptoms: { type: Type.ARRAY, items: { type: Type.STRING } },
     recommendedTreatment: { type: Type.ARRAY, items: { type: Type.STRING } },
     preventativeMeasures: { type: Type.ARRAY, items: { type: Type.STRING } },
   },
-  required: ["isBeeOrHive", "conditionName", "severity", "description", "recommendedTreatment", "preventativeMeasures"]
+  required: ["isBeeOrHive", "hiveCondition", "visualDetections", "conditionName", "severity", "description", "recommendedTreatment", "preventativeMeasures"]
 };
 
 // --- Helper Functions ---
@@ -163,16 +177,6 @@ const downloadImage = (url, filepath) => {
       }
     });
   });
-};
-
-const moveFile = (oldPath, newPath) => {
-  try {
-    fs.renameSync(oldPath, newPath);
-    return true;
-  } catch (err) {
-    console.error("Error moving file:", err);
-    return false;
-  }
 };
 
 const saveToDataset = (record) => {
@@ -259,7 +263,7 @@ async function handleImageAnalysis(chatId, photoId) {
           contents: {
             parts: [
               { inlineData: { mimeType: "image/jpeg", data: base64Image } },
-              { text: `حلل الصورة بيطرياً. ${VETERINARY_KNOWLEDGE_BASE}. Output JSON Arabic.` }
+              { text: `حلل الصورة كمفتش مناحل شامل. ${VETERINARY_KNOWLEDGE_BASE}. Output JSON Arabic.` }
             ]
           },
           config: { 
@@ -276,7 +280,6 @@ async function handleImageAnalysis(chatId, photoId) {
           retries++;
         } else if (e.message.includes("403") || e.message.includes("leaked")) {
            console.error(`❌ Key #${currentKeyIndex + 1} REVOKED/LEAKED. Switching...`);
-           // Remove bad key logic could go here, but for now just switch
            currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
            retries++;
         } else {
@@ -300,25 +303,32 @@ async function handleImageAnalysis(chatId, photoId) {
       return;
     }
 
+    // بناء التقرير
     const treatments = diagnosis.recommendedTreatment || [];
-    const treatmentText = Array.isArray(treatments) 
-      ? treatments.map(t => `• ${t}`).join('\n') 
-      : treatments;
+    const treatmentText = Array.isArray(treatments) ? treatments.map(t => `• ${t}`).join('\n') : treatments;
 
     const preventions = diagnosis.preventativeMeasures || [];
-    const preventionText = Array.isArray(preventions) 
-      ? preventions.map(p => `• ${p}`).join('\n') 
-      : preventions;
+    const preventionText = Array.isArray(preventions) ? preventions.map(p => `• ${p}`).join('\n') : preventions;
+    
+    const detections = diagnosis.visualDetections || [];
+    const detectionsText = detections.length > 0 ? detections.join('، ') : "لا يوجد مشاهدات خاصة";
 
     const severityIcon = diagnosis.severity === "CRITICAL" ? "🔴" : diagnosis.severity === "HEALTHY" ? "🟢" : "🟠";
+    const conditionText = diagnosis.hiveCondition === "STRONG" ? "قوية 💪" : diagnosis.hiveCondition === "WEAK" ? "ضعيفة 🥀" : "متوسطة ⚖️";
 
-    let message = `🔬 *تقرير الفحص البيطري*\n`;
+    let message = `🔬 *تقرير مفتش المناحل*\n`;
+    message += `📊 *حالة الخلية:* ${conditionText}\n`;
+    message += `👁️ *المشاهدات:* ${detectionsText}\n\n`;
+    
     message += `🦠 *التشخيص:* ${diagnosis.conditionName}\n`;
     message += `${severityIcon} *الخطورة:* ${diagnosis.severity}\n\n`;
     message += `📝 *التحليل:* ${diagnosis.description}\n\n`;
-    message += `💊 *العلاج:* \n${treatmentText}\n\n`;
-    if (preventionText) {
-      message += `🛡️ *وقاية المنحل:* \n${preventionText}\n\n`;
+    
+    if (diagnosis.severity !== "HEALTHY") {
+        message += `💊 *العلاج:* \n${treatmentText}\n\n`;
+        message += `🛡️ *وقاية المنحل:* \n${preventionText}\n\n`;
+    } else {
+        message += `💡 *نصيحة:* \n${treatmentText}\n\n`;
     }
 
     await bot.sendMessage(chatId, message, {
@@ -333,11 +343,7 @@ async function handleImageAnalysis(chatId, photoId) {
 
   } catch (error) {
     console.error("Analysis Error:", error);
-    if (error.message.includes("Missing API Keys")) {
-         bot.sendMessage(chatId, "❌ خطأ في الإعدادات: يرجى تحديث مفاتيح API في لوحة التحكم (Render Environment Variables).");
-    } else {
-         bot.sendMessage(chatId, "❌ نعتذر، حدث خطأ تقني. حاول مرة أخرى.");
-    }
+    bot.sendMessage(chatId, "❌ نعتذر، حدث خطأ تقني. حاول مرة أخرى.");
   }
 }
 
@@ -351,10 +357,20 @@ bot.on('photo', async (msg) => {
   addToQueue(msg, chatId, photoId);
 });
 
-bot.on('callback_query', (query) => {
+bot.on('callback_query', async (query) => {
   const chatId = query.message.chat.id;
   const [action, id] = query.data.split('_');
   const timestampId = parseInt(id);
+
+  // إخفاء الأزرار فوراً لمنع التكرار
+  try {
+    await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
+      chat_id: chatId,
+      message_id: query.message.message_id
+    });
+  } catch (e) {
+    console.log("Error removing markup (message likely old):", e.message);
+  }
 
   if (fs.existsSync(DATA_FILE)) {
     const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
@@ -362,22 +378,47 @@ bot.on('callback_query', (query) => {
     
     if (index !== -1) {
       const record = data[index];
-      const oldPath = record.current_path;
-      const filename = record.filename;
+      const localPath = record.current_path;
       
-      let newDir = action === "correct" ? CORRECT_DIR : WRONG_DIR;
-      let newPath = path.join(newDir, filename);
+      data[index].user_feedback = action;
+      fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 
-      if (fs.existsSync(oldPath)) {
-        moveFile(oldPath, newPath);
-        data[index].user_feedback = action;
-        data[index].current_path = newPath;
-        fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+      await bot.answerCallbackQuery(query.id, { text: "تم تسجيل ردك" });
+      
+      if (action === "correct") {
+         await bot.sendMessage(chatId, `✅ شكراً! تم تأكيد التشخيص وحفظ الصورة في قاعدة البيانات.`);
+         
+         // --- CLOUD ARCHIVING TO CHANNEL ---
+         if (fs.existsSync(localPath)) {
+             try {
+                 const caption = `📁 #Confirmed_Data\n` +
+                                 `🦠 Disease: ${record.diagnosis.conditionName}\n` +
+                                 `⚖️ Condition: ${record.diagnosis.hiveCondition}\n` +
+                                 `⚠️ Severity: ${record.diagnosis.severity}\n` +
+                                 `📝 Desc: ${record.diagnosis.description.substring(0, 100)}...\n\n` +
+                                 `🛠 JSON Data:\n` +
+                                 `${JSON.stringify(record.diagnosis)}`;
 
-        const replyText = action === "correct" ? `✅ شكراً! تم تأكيد التشخيص.` : `📝 شكراً لتنبيهنا، سنراجع الحالة.`;
-        bot.answerCallbackQuery(query.id, { text: "تم" });
-        bot.sendMessage(chatId, replyText);
+                 const fileStream = fs.createReadStream(localPath);
+                 
+                 // Sending to the Dataset Channel
+                 await bot.sendPhoto(DATASET_CHANNEL_ID, fileStream, { 
+                     caption: caption.substring(0, 1024) // Telegram limits caption to 1024 chars
+                 });
+                 console.log("✅ Image archived to Telegram Channel successfully.");
+                 
+             } catch (err) {
+                 console.error("❌ Failed to archive to channel:", err.message);
+                 // Don't fail the user interaction, just log server side
+             }
+         } else {
+             console.log("⚠️ File expired or deleted before archiving.");
+         }
+      } else {
+         await bot.sendMessage(chatId, `📝 شكراً لتنبيهنا، سنراجع الحالة.`);
       }
+    } else {
+        await bot.sendMessage(chatId, "⚠️ السجل قديم جداً أو غير موجود.");
     }
   }
 });
