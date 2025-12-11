@@ -343,7 +343,7 @@ async function handleImageAnalysis(chatId, photoId) {
 }
 
 bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(msg.chat.id, "👨‍⚕️ *BeeSenseBot (Ph.D. Edition)*\n\nأرسل صورة للفحص الجنائي الدقيق للأمراض والطفيليات.\n(سيتم تجاهل قوة الخلية والملكة).", {parse_mode: 'Markdown'});
+  bot.sendMessage(msg.chat.id, "👨‍⚕️ *BeeSenseBot (Ph.D. Edition)*\n\nأرسل صورة للفحص الجنائي الدقيق للأمراض والطفيليات.", {parse_mode: 'Markdown'});
 });
 
 bot.on('photo', async (msg) => {
