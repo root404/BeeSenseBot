@@ -45,21 +45,22 @@ server.listen(PORT, () => {
 // --- CONFIGURATION ---
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 if (!TELEGRAM_TOKEN) {
-    console.error("❌ FATAL ERROR: TELEGRAM_TOKEN missing!");
+    console.error("❌ FATAL ERROR: TELEGRAM_TOKEN missing in Environment Variables!");
     process.exit(1);
 }
 
 const DATASET_CHANNEL_ID = process.env.DATASET_CHANNEL_ID || "-1003359411043";
 
+// STRICT SECURITY: Only use Environment Variables
 let API_KEYS = [
   process.env.API_KEY_1,
   process.env.API_KEY_2,
   process.env.API_KEY_3,
   process.env.API_KEY_4
-].filter(key => key && key.trim().length > 0 && !key.includes("ضع_مفتاح"));
+].filter(key => key && key.trim().length > 10 && !key.includes("ضع_مفتاح"));
 
 if (API_KEYS.length === 0) {
-  console.error("❌ FATAL ERROR: No valid API Keys found!");
+  console.error("❌ FATAL ERROR: No valid API Keys found in Environment Variables (API_KEY_1...4)!");
   process.exit(1);
 }
 
@@ -78,11 +79,32 @@ const DATA_FILE = path.join(DATASET_DIR, 'data.json');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
+// --- TELEGRAM BOT SETUP WITH GRACEFUL SHUTDOWN ---
 const bot = new TelegramBot(TELEGRAM_TOKEN, { 
-  polling: { interval: 300, autoStart: true, params: { timeout: 10 } }
+  polling: { interval: 1000, autoStart: true, params: { timeout: 10 } }
 });
 
 console.log(`🐝 BeeSenseBot (Ph.D. Mode) is running with ${API_KEYS.length} keys.`);
+
+// Handle Render Shutdown Signals (Fix for 409 Conflict)
+const stopBot = async (signal) => {
+  console.log(`🛑 Received ${signal}. Stopping polling to allow new instance...`);
+  await bot.stopPolling();
+  server.close();
+  process.exit(0);
+};
+
+process.once('SIGTERM', () => stopBot('SIGTERM'));
+process.once('SIGINT', () => stopBot('SIGINT'));
+
+// Error Handling to prevent crash logs flooding
+bot.on('polling_error', (error) => {
+  if (error.code === 'ETELEGRAM' && error.message.includes('409 Conflict')) {
+    console.warn("⚠️ Conflict detected: Old instance is still closing... waiting.");
+  } else {
+    console.error(`[Polling Error] ${error.code}: ${error.message}`);
+  }
+});
 
 // --- Ph.D. KNOWLEDGE BASE ---
 const VETERINARY_KNOWLEDGE_BASE = `
