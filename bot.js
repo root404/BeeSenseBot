@@ -6,40 +6,28 @@ import path from 'path';
 import https from 'https';
 import http from 'http';
 
-// --- SERVER SETUP FOR RENDER (CRITICAL) ---
+// --- SERVER SETUP ---
 const PORT = process.env.PORT || 3000;
 const START_TIME = new Date().toLocaleString('en-US', { timeZone: 'UTC' });
 
-// صفحة HTML لعرض حالة البوت ووقت التشغيل
 const HTML_STATUS_PAGE = (uptime) => `
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BeeSenseBot Status</title>
     <style>
-        body { font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        .card { background: white; padding: 2rem; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); text-align: center; max-width: 400px; width: 90%; }
-        .status { color: #16a34a; font-weight: bold; font-size: 1.25rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem; margin-bottom: 1rem; }
-        .dot { width: 10px; height: 10px; background: #16a34a; border-radius: 50%; display: inline-block; animation: pulse 2s infinite; }
-        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(22, 163, 74, 0); } 100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); } }
-        h1 { color: #1e293b; margin: 0 0 0.5rem 0; }
-        p { color: #64748b; line-height: 1.5; margin-bottom: 0.5rem; }
-        .meta { font-size: 0.875rem; color: #94a3b8; background: #f1f5f9; padding: 0.5rem; border-radius: 0.5rem; margin-top: 1rem; text-align: left; direction: ltr; }
-        .env-badge { background: #e0f2fe; color: #0369a1; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
+        body { font-family: system-ui, sans-serif; background: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .card { background: white; padding: 2rem; border-radius: 1rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); text-align: center; }
+        .status { color: #16a34a; font-weight: bold; margin-bottom: 1rem; }
     </style>
 </head>
 <body>
     <div class="card">
-        <div class="status"><span class="dot"></span> السيرفر يعمل بنشاط</div>
-        <h1>BeeSenseBot</h1>
-        <p>بوت تيليجرام لتحليل أمراض النحل يعمل الآن.</p>
-        <div class="meta">
-            <div><strong>Environment:</strong> Render / Node.js</div>
-            <div><strong>Started:</strong> ${START_TIME}</div>
-            <div><strong>Mode:</strong> <span class="env-badge">SECURE ENV</span></div>
-        </div>
+        <div class="status">✅ السيرفر يعمل بنشاط</div>
+        <h1>BeeSenseBot - Ph.D. Edition</h1>
+        <p>Expert Pathology Mode Active</p>
+        <p>Started: ${uptime}</p>
     </div>
 </body>
 </html>
@@ -54,20 +42,15 @@ server.listen(PORT, () => {
   console.log(`🌐 Health check server listening on port ${PORT}`);
 });
 
-// --- Configuration (Strict Environment Variables) ---
-
-// 1. Telegram Token
+// --- CONFIGURATION ---
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 if (!TELEGRAM_TOKEN) {
-    console.error("❌ FATAL ERROR: TELEGRAM_TOKEN is missing from Environment Variables!");
-    console.error("👉 Go to Render Dashboard -> Environment -> Add TELEGRAM_TOKEN");
-    process.exit(1); // Stop the app to prevent crash loops
+    console.error("❌ FATAL ERROR: TELEGRAM_TOKEN missing!");
+    process.exit(1);
 }
 
-// 2. Dataset Channel
 const DATASET_CHANNEL_ID = process.env.DATASET_CHANNEL_ID || "-1003359411043";
 
-// 3. API Keys (Strict Mode)
 let API_KEYS = [
   process.env.API_KEY_1,
   process.env.API_KEY_2,
@@ -76,8 +59,7 @@ let API_KEYS = [
 ].filter(key => key && key.trim().length > 0 && !key.includes("ضع_مفتاح"));
 
 if (API_KEYS.length === 0) {
-  console.error("❌ FATAL ERROR: No valid API Keys found in Environment Variables!");
-  console.error("👉 Go to Render Dashboard -> Environment -> Add API_KEY_1, API_KEY_2, etc.");
+  console.error("❌ FATAL ERROR: No valid API Keys found!");
   process.exit(1);
 }
 
@@ -96,85 +78,77 @@ const DATA_FILE = path.join(DATASET_DIR, 'data.json');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
-// Initialize Bot
 const bot = new TelegramBot(TELEGRAM_TOKEN, { 
-  polling: {
-    interval: 300,
-    autoStart: true,
-    params: {
-      timeout: 10
-    }
-  }
+  polling: { interval: 300, autoStart: true, params: { timeout: 10 } }
 });
 
-console.log("🐝 BeeSenseBot Telegram Bot is running...");
-console.log(`🚀 Secure Mode: ${API_KEYS.length} API Keys Loaded from Environment.`);
-console.log(`📂 Cloud Archiving Active: Channel ${DATASET_CHANNEL_ID}`);
+console.log(`🐝 BeeSenseBot (Ph.D. Mode) is running with ${API_KEYS.length} keys.`);
 
-bot.on('polling_error', async (error) => {
-  if (error.code === 'ETELEGRAM' && error.message.includes('409 Conflict')) {
-    console.log("⚠️ Conflict Error: Another bot instance is running. Retrying in 5s...");
-    await bot.stopPolling();
-    setTimeout(() => {
-        bot.startPolling();
-    }, 5000);
-  } else if (error.code === 'ETELEGRAM' && error.message.includes('401 Unauthorized')) {
-    console.error("❌ AUTH ERROR: Invalid Token. Check TELEGRAM_TOKEN in Render Environment.");
-  } else {
-    console.log(`Polling Error: ${error.code}`);
-  }
-});
-
-// --- Knowledge Base - FORENSIC UPDATE v2 ---
+// --- Ph.D. KNOWLEDGE BASE ---
 const VETERINARY_KNOWLEDGE_BASE = `
-⚠️ وضع الفحص الجنائي البيطري (Forensic Veterinary Mode):
-أنت الآن "مفتش جنائي" لأمراض النحل. مهمتك ليست التخمين، بل البحث عن الأدلة الدقيقة.
+⚠️ وضع الدكتوراه في علم أمراض النحل (Ph.D. Pathology Mode):
+أنت الآن "بروفيسور في علم أمراض الحشرات" متخصص في *Apis mellifera*.
+مهمتك: إجراء فحص جنائي دقيق للصورة للكشف عن الأمراض، الطفيليات، والفيروسات فقط.
+⛔ ممنوع نهائياً: الحديث عن قوة الخلية، كمية النحل، جودة الملكة، أو مخزون العسل. ركز فقط على "المرض".
 
-قاعدة ذهبية: "الشك يفسر لصالح المرض". إذا كانت الحضنة غير متراصة (Spotty Brood)، فالخلية مريضة أو ضعيفة، وليست سليمة.
+🔍 بروتوكول التشخيص المتقدم (Advanced Diagnostic Protocol):
 
-القواعد الصارمة:
-1. **نمط الحضنة (Brood Pattern)**:
-   - **سليم (STRONG)**: متراص جداً (Solid) كالسجادة، لا توجد فراغات.
-   - **مريض/ضعيف (WEAK/MODERATE)**: "طلقات خرطوش" (Shotgun pattern) - عيون فارغة كثيرة ومتناثرة وسط الحضنة المغلقة. هذا دليل قاطع على مشكلة (ملكة سيئة، فاروا، أو أمراض حضنة). لا تعطي تقييم "STRONG" أبداً إذا كان النمط متقطعاً.
+1. **طفيلي الفاروا (Varroa destructor):**
+   - افحص ظهر النحل (Tergites) والبطن (Sternites).
+   - حدد: هل الإصابة "Phoretic" (على النحل البالغ)؟
+   - ابحث عن الفاروا على العذارى (Pupae) عند إزالة الأغطية.
+   - قيّم الشدة: (Low: <3 mites visible, Severe: multiple mites on single bees).
 
-2. **الأغطية (Cappings)**:
-   - افحص الغطاء بدقة: هل هو مقعر/غائر (Sunken)؟ هل هو مثقوب (Perforated)؟ هل هو رطب/داكن؟ -> هذه علامات مؤكدة لمرض **AFB** (تعفن أمريكي).
+2. **الفيروسات (Viral Complex):**
+   - **DWV (تشوه الأجنحة):** أجنحة ضامرة، قصيرة، مجعدة. بطون قصيرة.
+   - **CBPV (الشلل المزمن):** نحل أسود لامع (Greasy/Hairless)، يرتجف (Trembling)، بطون منتفخة.
+   - **ABPV/IAPV:** شلل حاد، اسوداد، موت مفاجئ أمام الخلية.
+   - **SBV (تكيس الحضنة الفيروسي):** يرقات تشبه "الزورق" (Gondola shape)، رأس داكن، كيس مائي.
 
-3. **اليرقات (Larvae)**:
-   - السليمة: بيضاء لؤلؤية ناصعة، رطبة، شكل حرف C في قاع العين.
-   - المريضة: ملتوية، صفراء، بنية، ذائبة (Ropey)، أو جافة (قشور).
+3. **أمراض الحضنة البكتيرية:**
+   - **AFB (التعفن الأمريكي - Paenibacillus larvae):**
+     - المظهر: أغطية غائرة (Sunken)، مثقوبة (Perforated)، رطبة/دهنية.
+     - اليرقة: تتحول لكتلة لزجة بنية (Coffee color)، اختبار العود (Ropiness > 2cm)، قشور صلبة (Scale) ملتصقة بالقاع.
+   - **EFB (التعفن الأوروبي - Melissococcus plutonius):**
+     - المظهر: يرقات ملتوية (Twisted/Corkscrew)، لون أصفر/كريمي، القصبات الهوائية واضحة، رائحة حمضية.
 
-4. **المشاهدات (Detections)**:
-   - ابحث بدقة عن: الملكة، البيض (عمودي في قاع العين)، يرقات، حبوب لقاح (خبز النحل)، عسل مختوم.
+4. **الفطريات (Fungal Diseases):**
+   - **Chalkbrood (التكلس - Ascosphaera apis):** يرقات محنطة صلبة (Mummies)، بيضاء (كالطباشير) أو سوداء/رمادية، توجد في العيون أو مدخل الخلية.
+   - **Stonebrood (التحجر - Aspergillus):** يرقات صلبة مخضرة/صفراء (نادر).
 
-5. **القرارات**:
-   - إذا رأيت فاروا واحدة (نقطة حمراء): الحالة **MODERATE** أو **CRITICAL** (ليست HEALTHY).
-   - إذا رأيت أغطية مثقوبة: الحالة **CRITICAL** (AFB).
-   - إذا لم تجد بيضاً أو يرقات حديثة: الخلية قد تكون يتيمة (Queenless).
+5. **طفيليات الأمعاء (Microsporidia):**
+   - **Nosema (apis/ceranae):**
+     - لا توجد أعراض خارجية واضحة على النحلة نفسها (Dissected gut is white not brown).
+     - **العلامة الخارجية الوحيدة:** لطخات برازية (Dysentery streaks) بنية/صفراء على الإطارات والمدخل.
+     - (تحذير: فرق بينها وبين إسهال الربيع الطبيعي).
 
-تنبيه: كن دقيقاً جداً. لا تقل "Healthy" إلا إذا كانت الحضنة مثالية ومتراصة.
+6. **الآفات (Pests):**
+   - **Small Hive Beetle (Aethina tumida):** خنافس سوداء صغيرة تركض للاختباء، يرقات تزحف في العسل وتسبب تخمره (Slime).
+   - **Wax Moth (Galleria mellonella):** أنفاق حريرية (Webbing) في الشمع، تدمير الحضنة (Bald brood)، يرقات بيضاء سريعة.
+   - **Tropilaelaps:** طفيلي أصغر من الفاروا، لونه بني فاتح، سريع الحركة.
+
+📝 التقرير المطلوب:
+- اذكر اسم المرض العلمي.
+- حدد *بدقة* مكان العلامة في الصورة (مثلاً: "على الجناح الأيسر للنحلة في الوسط").
+- حدد درجة الخطورة (Mild, Moderate, Severe, Critical).
+- اكتب بروتوكول علاج كيميائي (مثل Amitraz/Formic) وعضوي/وقائي.
 `;
 
 const diagnosisSchema = {
   type: Type.OBJECT,
   properties: {
     isBeeOrHive: { type: Type.BOOLEAN },
-    hiveCondition: { type: Type.STRING, enum: ["STRONG", "MODERATE", "WEAK", "UNKNOWN"], description: "Overall colony strength based on bee density and brood pattern. Spotty brood = WEAK or MODERATE." },
-    visualDetections: { 
-      type: Type.ARRAY, 
-      items: { type: Type.STRING }, 
-      description: "List of items seen: e.g., 'Queen', 'Eggs', 'Capped Brood', 'Honey', 'Pollen', 'Varroa Mites'." 
-    },
     conditionName: { type: Type.STRING },
     severity: { type: Type.STRING, enum: ["HEALTHY", "LOW", "MODERATE", "CRITICAL", "UNKNOWN"] },
     description: { type: Type.STRING },
+    symptoms: { type: Type.ARRAY, items: { type: Type.STRING } },
     recommendedTreatment: { type: Type.ARRAY, items: { type: Type.STRING } },
     preventativeMeasures: { type: Type.ARRAY, items: { type: Type.STRING } },
   },
-  required: ["isBeeOrHive", "hiveCondition", "visualDetections", "conditionName", "severity", "description", "recommendedTreatment", "preventativeMeasures"]
+  required: ["isBeeOrHive", "conditionName", "severity", "description", "symptoms", "recommendedTreatment", "preventativeMeasures"]
 };
 
-// --- Helper Functions ---
+// --- HELPER FUNCTIONS ---
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const downloadImage = (url, filepath) => {
@@ -208,8 +182,6 @@ const processQueue = async () => {
     }
 
     await handleImageAnalysis(chatId, photoId);
-    
-    // Fast throttle
     await delay(1000); 
 
   } catch (err) {
@@ -228,7 +200,7 @@ const addToQueue = (msg, chatId, photoId) => {
   if (position > 5) {
      bot.sendMessage(chatId, `🚦 أنت رقم ${position} في الطابور.`);
   } else if (position === 1) {
-     bot.sendMessage(chatId, "جاري تحليل الصورة... 🔍");
+     bot.sendMessage(chatId, "🔍 جاري الفحص المجهري...");
   }
   processQueue();
 };
@@ -246,7 +218,6 @@ async function handleImageAnalysis(chatId, photoId) {
     const imageBuffer = fs.readFileSync(localFilePath);
     const base64Image = imageBuffer.toString('base64');
 
-    // 🔄 KEY ROTATION LOGIC
     let aiResult = null;
     let retries = 0;
     const maxRetries = 10; 
@@ -260,13 +231,13 @@ async function handleImageAnalysis(chatId, photoId) {
           contents: {
             parts: [
               { inlineData: { mimeType: "image/jpeg", data: base64Image } },
-              { text: `حلل الصورة كمفتش مناحل شامل. ${VETERINARY_KNOWLEDGE_BASE}. Output JSON Arabic.` }
+              { text: `Analyze as Ph.D. Pathologist. ${VETERINARY_KNOWLEDGE_BASE}. Output JSON Arabic.` }
             ]
           },
           config: { 
             responseMimeType: "application/json", 
             responseSchema: diagnosisSchema,
-            temperature: 0.0, // Strict deterministic output
+            temperature: 0.0, 
             topK: 1
           }
         });
@@ -275,7 +246,6 @@ async function handleImageAnalysis(chatId, photoId) {
         if (e.message.includes("429") || e.message.includes("Quota")) {
           console.log(`⚠️ Key #${currentKeyIndex + 1} Exhausted. Switching...`);
           currentKeyIndex = (currentKeyIndex + 1) % API_KEYS.length;
-          console.log(`✅ Using Key #${currentKeyIndex + 1}`);
           retries++;
         } else if (e.message.includes("403") || e.message.includes("leaked")) {
            console.error(`❌ Key #${currentKeyIndex + 1} REVOKED/LEAKED. Switching...`);
@@ -292,73 +262,66 @@ async function handleImageAnalysis(chatId, photoId) {
     const diagnosis = JSON.parse(aiResult.text);
 
     if (!diagnosis.isBeeOrHive) {
-      await bot.sendMessage(chatId, "⚠️ لم أتعرف على نحل أو خلية في الصورة.");
+      await bot.sendMessage(chatId, "⚠️ الصورة لا تحتوي على نحل أو إطارات واضحة للفحص.");
       return;
     }
 
-    // بناء التقرير
+    // Build Report
     const treatments = diagnosis.recommendedTreatment || [];
     const treatmentText = Array.isArray(treatments) ? treatments.map(t => `• ${t}`).join('\n') : treatments;
 
     const preventions = diagnosis.preventativeMeasures || [];
     const preventionText = Array.isArray(preventions) ? preventions.map(p => `• ${p}`).join('\n') : preventions;
     
-    const detections = diagnosis.visualDetections || [];
-    const detectionsText = detections.length > 0 ? detections.join('، ') : "لا يوجد مشاهدات خاصة";
+    const symptoms = diagnosis.symptoms || [];
+    const symptomsText = symptoms.length > 0 ? symptoms.join('\n- ') : "لا توجد علامات مرضية ظاهرة";
 
     const severityIcon = diagnosis.severity === "CRITICAL" ? "🔴" : diagnosis.severity === "HEALTHY" ? "🟢" : "🟠";
-    const conditionText = diagnosis.hiveCondition === "STRONG" ? "قوية 💪" : diagnosis.hiveCondition === "WEAK" ? "ضعيفة 🥀" : "متوسطة ⚖️";
 
-    let message = `🔬 *تقرير مفتش المناحل*\n`;
-    message += `📊 *حالة الخلية:* ${conditionText}\n`;
-    message += `👁️ *المشاهدات:* ${detectionsText}\n\n`;
-    
+    let message = `🔬 *تقرير المختبر البيطري (Ph.D. Mode)*\n\n`;
     message += `🦠 *التشخيص:* ${diagnosis.conditionName}\n`;
     message += `${severityIcon} *الخطورة:* ${diagnosis.severity}\n\n`;
-    message += `📝 *التحليل:* ${diagnosis.description}\n\n`;
+    message += `⚠️ *العلامات المكتشفة:* \n- ${symptomsText}\n\n`;
+    message += `📝 *التحليل الجنائي:* \n${diagnosis.description}\n\n`;
     
     if (diagnosis.severity !== "HEALTHY") {
-        message += `💊 *العلاج:* \n${treatmentText}\n\n`;
-        message += `🛡️ *وقاية المنحل:* \n${preventionText}\n\n`;
+        message += `💊 *بروتوكول العلاج:* \n${treatmentText}\n\n`;
+        message += `🛡️ *الوقاية:* \n${preventionText}\n\n`;
     } else {
-        message += `💡 *نصيحة:* \n${treatmentText}\n\n`;
+        message += `💡 *التوصية:* \nاستمر في المراقبة الدورية.\n\n`;
     }
 
     await bot.sendMessage(chatId, message, {
       parse_mode: "Markdown",
       reply_markup: {
         inline_keyboard: [[
-          { text: "✅ تشخيص دقيق", callback_data: `correct_${timestamp}` },
+          { text: "✅ تشخيص دقيق (أرشفة)", callback_data: `correct_${timestamp}` },
           { text: "❌ غير دقيق", callback_data: `wrong_${timestamp}` }
         ]]
       }
     });
 
-    // Save record temporarily for callback
     const record = {
       id: timestamp, filename: filename, current_path: localFilePath,
       diagnosis: diagnosis, user_feedback: "pending", timestamp: new Date().toISOString()
     };
     
-    // Simple in-memory storage for immediate feedback handling if filesystem is ephemeral
-    // but we write to file for simple persistence across short restarts
     let data = [];
     if (fs.existsSync(DATA_FILE)) {
         try { data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch (e) {}
     }
     data.push(record);
-    // Keep file size manageable
     if (data.length > 100) data = data.slice(-100);
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 
   } catch (error) {
     console.error("Analysis Error:", error);
-    bot.sendMessage(chatId, "❌ نعتذر، حدث خطأ تقني. حاول مرة أخرى.");
+    bot.sendMessage(chatId, "❌ نعتذر، حدث خطأ تقني.");
   }
 }
 
 bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(msg.chat.id, "مرحباً! 🐝\nأنا BeeSenseBot.\nأرسل صورة للنحل للحصول على تقرير بيطري شامل.");
+  bot.sendMessage(msg.chat.id, "👨‍⚕️ *BeeSenseBot (Ph.D. Edition)*\n\nأرسل صورة للفحص الجنائي الدقيق للأمراض والطفيليات.\n(سيتم تجاهل قوة الخلية والملكة).", {parse_mode: 'Markdown'});
 });
 
 bot.on('photo', async (msg) => {
@@ -372,15 +335,11 @@ bot.on('callback_query', async (query) => {
   const [action, id] = query.data.split('_');
   const timestampId = parseInt(id);
 
-  // إخفاء الأزرار فوراً
   try {
     await bot.editMessageReplyMarkup({ inline_keyboard: [] }, {
-      chat_id: chatId,
-      message_id: query.message.message_id
+      chat_id: chatId, message_id: query.message.message_id
     });
-  } catch (e) {
-    console.log("Markup removal error:", e.message);
-  }
+  } catch (e) {}
 
   if (fs.existsSync(DATA_FILE)) {
     const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
@@ -390,42 +349,35 @@ bot.on('callback_query', async (query) => {
       const record = data[index];
       const localPath = record.current_path;
 
-      await bot.answerCallbackQuery(query.id, { text: "تم تسجيل ردك" });
+      await bot.answerCallbackQuery(query.id, { text: "تم" });
       
       if (action === "correct") {
-         await bot.sendMessage(chatId, `✅ شكراً! تم تأكيد التشخيص وحفظ الصورة في قاعدة البيانات.`);
+         await bot.sendMessage(chatId, `✅ تم اعتماد التشخيص.`);
          
          if (fs.existsSync(localPath)) {
              try {
-                 // 1. Send the Photo first with a SHORT caption to avoid truncation
                  const caption = `📁 #Confirmed_Data\n` +
                                  `🦠 ${record.diagnosis.conditionName}\n` +
-                                 `⚖️ ${record.diagnosis.hiveCondition}\n` +
                                  `⚠️ ${record.diagnosis.severity}\n` +
-                                 `#${record.diagnosis.conditionName.replace(/\s/g, '_')} #BeeSense`;
+                                 `#Pathology #${record.diagnosis.conditionName.replace(/\s/g, '_')}`;
 
                  const fileStream = fs.createReadStream(localPath);
                  const sentMsg = await bot.sendPhoto(DATASET_CHANNEL_ID, fileStream, { caption: caption });
                  
-                 // 2. Send the FULL JSON as a separate message (Reply) so it's never cut off
                  const jsonString = JSON.stringify(record.diagnosis, null, 2);
-                 const jsonMessage = `📊 *Full Diagnosis Data (JSON):*\n\`\`\`json\n${jsonString}\n\`\`\``;
+                 const jsonMessage = `📊 *Clinical Data:*\n\`\`\`json\n${jsonString}\n\`\`\``;
                  
                  await bot.sendMessage(DATASET_CHANNEL_ID, jsonMessage, { 
                      parse_mode: "Markdown",
                      reply_to_message_id: sentMsg.message_id
                  });
-
-                 console.log("✅ Archived to Cloud Channel (Split Message).");
              } catch (err) {
-                 console.error("❌ Archive Failed:", err.message);
+                 console.error("Archive Failed:", err.message);
              }
          }
       } else {
-         await bot.sendMessage(chatId, `📝 شكراً لتنبيهنا.`);
+         await bot.sendMessage(chatId, `📝 شكراً.`);
       }
-    } else {
-        await bot.sendMessage(chatId, "⚠️ السجل غير موجود (ربما تم إعادة تشغيل السيرفر).");
     }
   }
 });
