@@ -5,6 +5,7 @@ import process from 'process';
 import fs from 'fs';
 import path from 'path';
 import http from 'http';
+import https from 'https';
 
 // --- SERVER SETUP (Prevent Render Sleep) ---
 const PORT = process.env.PORT || 3000;
@@ -18,16 +19,10 @@ server.listen(PORT);
 
 // --- CONFIGURATION ---
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-const ADMIN_ID = process.env.ADMIN_ID; // ارفع الـ ID الخاص بك في متغيرات البيئة
-const DATASET_CHANNEL_ID = process.env.DATASET_CHANNEL_ID || "-1003359411043";
+const ADMIN_ID = process.env.ADMIN_ID; 
+const API_KEY = process.env.API_KEY;
 
-let API_KEYS = [
-  process.env.API_KEY_1,
-  process.env.API_KEY_2
-].filter(Boolean);
-
-let currentKeyIndex = 0;
-const getAIClient = () => new GoogleGenAI({ apiKey: API_KEYS[currentKeyIndex] });
+const getAIClient = () => new GoogleGenAI({ apiKey: process.env.API_KEY || process.env.API_KEY_1 });
 
 // --- DATABASE SETUP (Local JSON) ---
 const DB_PATH = path.join(process.cwd(), 'users_db.json');
@@ -36,7 +31,13 @@ if (fs.existsSync(DB_PATH)) {
     try { usersDB = JSON.parse(fs.readFileSync(DB_PATH)); } catch (e) { usersDB = {}; }
 }
 
-const saveDB = () => fs.writeFileSync(DB_PATH, JSON.stringify(usersDB, null, 2));
+const saveDB = () => {
+    try {
+        fs.writeFileSync(DB_PATH, JSON.stringify(usersDB, null, 2));
+    } catch (e) {
+        console.error("Failed to save DB:", e);
+    }
+};
 
 const getUser = (id) => {
     if (!usersDB[id]) {
@@ -49,7 +50,7 @@ const getUser = (id) => {
 // --- TELEGRAM BOT ---
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 
-const WELCOME_MSG = `👨‍⚕️ *BeeSenseBot – خبير أمراض النحل (Ph.D. Edition)*
+const WELCOME_MSG = `👨‍⚕️ *BeeSenseBot – خبير أمراض النحل (Gemini 3 Flash)*
 
 أهلاً بك في أول مختبر ذكاء اصطناعي متخصص في أمراض النحل في تونس 🇹🇳.
 
@@ -65,8 +66,8 @@ const PAYMENT_MSG = `⚠️ *انتهت المحاولات المجانية!*
 لمواصلة استخدام خبير أمراض النحل والحصول على تشخيصات غير محدودة، يرجى تفعيل الاشتراك (ثمن رمزي لمرة واحدة):
 
 💳 *طرق التفعيل في تونس:*
-1. **D17:** أرسل 10 دينار إلى الرقم [00000000] ثم أرسل صورة الوصل هنا.
-2. **رصيد هاتف:** أرسل كارت شحن (Ooredoo/Orange/Telecom) بقيمة 10 دينار هنا.
+1. **D17:** أرسل 10 دينار إلى الرقم [أدخل رقمك هنا] ثم أرسل صورة الوصل هنا.
+2. **رصيد هاتف:** أرسل كارت شحن بقيمة 10 دينار هنا.
 
 سيقوم فريقنا بتفعيل حسابك فوراً بمجرد استلام الكود أو الوصل.`;
 
@@ -76,13 +77,15 @@ bot.onText(/\/start/, (msg) => {
 
 // Admin command to activate user
 bot.onText(/\/activate (\d+)/, (msg, match) => {
-    if (msg.chat.id.toString() !== ADMIN_ID?.toString()) return;
+    if (ADMIN_ID && msg.chat.id.toString() !== ADMIN_ID.toString()) return;
     const targetId = match[1];
     if (usersDB[targetId]) {
         usersDB[targetId].isPaid = true;
         saveDB();
         bot.sendMessage(targetId, "✅ *تم تفعيل اشتراكك بنجاح!* يمكنك الآن استخدام البوت بشكل غير محدود.", { parse_mode: 'Markdown' });
         bot.sendMessage(msg.chat.id, `✅ تم تفعيل المستخدم ${targetId}`);
+    } else {
+        bot.sendMessage(msg.chat.id, `❌ المستخدم ${targetId} غير موجود في القاعدة.`);
     }
 });
 
@@ -95,28 +98,29 @@ bot.on('photo', async (msg) => {
         return bot.sendMessage(chatId, PAYMENT_MSG, { parse_mode: 'Markdown' });
     }
 
-    bot.sendMessage(chatId, "🔍 جاري التحليل باستخدام Gemini 3 Flash...");
+    bot.sendMessage(chatId, "🔍 جاري التحليل المتقدم باستخدام Gemini 3 Flash...");
 
     try {
         const fileId = msg.photo[msg.photo.length - 1].file_id;
         const fileLink = await bot.getFileLink(fileId);
         
-        // Fetch image as base64
-        const responseImage = await new Promise((resolve) => {
-            http.get(fileLink, (res) => {
+        // Fetch image as base64 using HTTPS
+        const responseImage = await new Promise((resolve, reject) => {
+            https.get(fileLink, (res) => {
                 const chunks = [];
                 res.on('data', (chunk) => chunks.push(chunk));
                 res.on('end', () => resolve(Buffer.concat(chunks).toString('base64')));
-            });
+                res.on('error', (err) => reject(err));
+            }).on('error', (err) => reject(err));
         });
 
         const ai = getAIClient();
-        const result = await ai.models.generateContent({
+        const response = await ai.models.generateContent({
             model: "gemini-3-flash-preview",
             contents: {
                 parts: [
                     { inlineData: { mimeType: "image/jpeg", data: responseImage } },
-                    { text: "Analyze as Ph.D. Bee Pathologist. Focus on diseases. Return Arabic JSON." }
+                    { text: "Analyze this bee image as a Ph.D. Bee Pathologist. Identify diseases like Varroa, Foulbrood, etc. Return output in Arabic. Format: Condition Name, Severity, Description, Treatment, Prevention. Use JSON format." }
                 ]
             },
             config: {
@@ -125,7 +129,7 @@ bot.on('photo', async (msg) => {
             }
         });
 
-        const diagnosis = JSON.parse(result.text);
+        const diagnosis = JSON.parse(response.text);
 
         // Update Usage
         if (!user.isPaid) {
@@ -134,40 +138,41 @@ bot.on('photo', async (msg) => {
         }
 
         const msgContent = `🔬 *نتائج الفحص:*
-🦠 *المرض:* ${diagnosis.conditionName}
-⚠️ *الخطورة:* ${diagnosis.severity}
+🦠 *المرض:* ${diagnosis.conditionName || diagnosis.condition || 'غير محدد'}
+⚠️ *الخطورة:* ${diagnosis.severity || 'متوسطة'}
 
-📝 *الوصف:* ${diagnosis.description}
+📝 *الوصف:* ${diagnosis.description || 'تم رصد حالة صحية تتطلب المتابعة.'}
 
 💊 *العلاج الموصى به:*
-${diagnosis.recommendedTreatment.map(t => `• ${t}`).join('\n')}
+${Array.isArray(diagnosis.recommendedTreatment) ? diagnosis.recommendedTreatment.map(t => `• ${t}`).join('\n') : diagnosis.recommendedTreatment || 'استشر خبيراً.'}
 
 🛡️ *الوقاية:*
-${diagnosis.preventativeMeasures.map(p => `• ${p}`).join('\n')}
+${Array.isArray(diagnosis.preventativeMeasures) ? diagnosis.preventativeMeasures.map(p => `• ${p}`).join('\n') : diagnosis.preventativeMeasures || 'الالتزام بالنظافة الدورية.'}
 
-${!user.isPaid ? `Remaining Free Scans: ${user.freeScans}` : '♾️ Unlimited Subscription'}`;
+${!user.isPaid ? `📉 المحاولات المتبقية: ${user.freeScans}` : '♾️ اشتراك غير محدود فعال'}`;
 
         bot.sendMessage(chatId, msgContent, { parse_mode: 'Markdown' });
 
     } catch (error) {
-        console.error(error);
-        bot.sendMessage(chatId, "❌ حدث خطأ في التحليل. حاول مرة أخرى.");
+        console.error("Analysis Error:", error);
+        bot.sendMessage(chatId, "❌ نعتذر، حدث خطأ أثناء تحليل الصورة. تأكد من جودة الصورة وحاول مجدداً.");
     }
 });
 
-// Handle text messages for payment codes
+// Handle text messages for potential payments
 bot.on('message', (msg) => {
-    if (msg.photo || msg.text?.startsWith('/')) return;
+    if (msg.photo || (msg.text && msg.text.startsWith('/'))) return;
     
-    // Notify admin if user sends a potential payment code or message after limit
     const user = getUser(msg.chat.id);
     if (!user.isPaid && user.freeScans <= 0) {
-        bot.sendMessage(ADMIN_ID, `📩 *رسالة دفع محتملة:*
-من: ${msg.chat.id}
+        if (ADMIN_ID) {
+            bot.sendMessage(ADMIN_ID, `📩 *رسالة دفع محتملة:*
+من: \`${msg.chat.id}\`
 النص: ${msg.text}
 لتفعيل الحساب، أرسل: \`/activate ${msg.chat.id}\``, { parse_mode: 'Markdown' });
-        bot.sendMessage(msg.chat.id, "⏳ تم استلام رسالتك. سيتواصل معك فريقنا فور التحقق من البيانات.");
+        }
+        bot.sendMessage(msg.chat.id, "⏳ شكراً لك. تم إرسال بياناتك للمراجعة. سيتم تفعيل حسابك فور التأكد من عملية الدفع.");
     }
 });
 
-console.log("🚀 BeeSenseBot v3 (Tunisia Edition) Started.");
+console.log("🚀 BeeSenseBot v3 (Fixed Protocol) Started.");
