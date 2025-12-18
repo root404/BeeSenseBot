@@ -20,11 +20,11 @@ server.listen(PORT);
 // --- CONFIGURATION ---
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const ADMIN_ID = process.env.ADMIN_ID; 
-const API_KEY = process.env.API_KEY;
+const API_KEY = process.env.API_KEY || process.env.API_KEY_1;
 
-const getAIClient = () => new GoogleGenAI({ apiKey: process.env.API_KEY || process.env.API_KEY_1 });
+const getAIClient = () => new GoogleGenAI({ apiKey: API_KEY });
 
-// --- DATABASE SETUP (Local JSON) ---
+// --- DATABASE SETUP ---
 const DB_PATH = path.join(process.cwd(), 'users_db.json');
 let usersDB = {};
 if (fs.existsSync(DB_PATH)) {
@@ -47,8 +47,26 @@ const getUser = (id) => {
     return usersDB[id];
 };
 
-// --- TELEGRAM BOT ---
-const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+// --- TELEGRAM BOT INITIALIZATION ---
+// We start with polling disabled to clear any existing webhooks first
+const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: false });
+
+// Graceful fix for 409 Conflict: Delete webhook then start polling
+bot.deleteWebHook()
+  .then(() => {
+    console.log("✅ Webhook cleared. Starting polling...");
+    return bot.startPolling();
+  })
+  .catch(err => console.error("❌ Polling error:", err.message));
+
+// Handle Render's shutdown signals to stop polling immediately
+const shutdown = async () => {
+  console.log("Shutting down BeeSenseBot...");
+  await bot.stopPolling();
+  process.exit(0);
+};
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 const WELCOME_MSG = `👨‍⚕️ *BeeSenseBot – خبير أمراض النحل (Gemini 3 Flash)*
 
@@ -75,7 +93,6 @@ bot.onText(/\/start/, (msg) => {
     bot.sendMessage(msg.chat.id, WELCOME_MSG, { parse_mode: 'Markdown' });
 });
 
-// Admin command to activate user
 bot.onText(/\/activate (\d+)/, (msg, match) => {
     if (ADMIN_ID && msg.chat.id.toString() !== ADMIN_ID.toString()) return;
     const targetId = match[1];
@@ -93,7 +110,6 @@ bot.on('photo', async (msg) => {
     const chatId = msg.chat.id;
     const user = getUser(chatId);
 
-    // Paywall Check
     if (!user.isPaid && user.freeScans <= 0) {
         return bot.sendMessage(chatId, PAYMENT_MSG, { parse_mode: 'Markdown' });
     }
@@ -104,7 +120,6 @@ bot.on('photo', async (msg) => {
         const fileId = msg.photo[msg.photo.length - 1].file_id;
         const fileLink = await bot.getFileLink(fileId);
         
-        // Fetch image as base64 using HTTPS
         const responseImage = await new Promise((resolve, reject) => {
             https.get(fileLink, (res) => {
                 const chunks = [];
@@ -120,7 +135,7 @@ bot.on('photo', async (msg) => {
             contents: {
                 parts: [
                     { inlineData: { mimeType: "image/jpeg", data: responseImage } },
-                    { text: "Analyze this bee image as a Ph.D. Bee Pathologist. Identify diseases like Varroa, Foulbrood, etc. Return output in Arabic. Format: Condition Name, Severity, Description, Treatment, Prevention. Use JSON format." }
+                    { text: "Analyze this bee image as a Ph.D. Bee Pathologist. Identify diseases. Return Arabic JSON with keys: conditionName, severity, description, recommendedTreatment (array), preventativeMeasures (array)." }
                 ]
             },
             config: {
@@ -131,48 +146,45 @@ bot.on('photo', async (msg) => {
 
         const diagnosis = JSON.parse(response.text);
 
-        // Update Usage
         if (!user.isPaid) {
             user.freeScans -= 1;
             saveDB();
         }
 
         const msgContent = `🔬 *نتائج الفحص:*
-🦠 *المرض:* ${diagnosis.conditionName || diagnosis.condition || 'غير محدد'}
+🦠 *المرض:* ${diagnosis.conditionName || 'غير محدد'}
 ⚠️ *الخطورة:* ${diagnosis.severity || 'متوسطة'}
 
-📝 *الوصف:* ${diagnosis.description || 'تم رصد حالة صحية تتطلب المتابعة.'}
+📝 *الوصف:* ${diagnosis.description}
 
 💊 *العلاج الموصى به:*
-${Array.isArray(diagnosis.recommendedTreatment) ? diagnosis.recommendedTreatment.map(t => `• ${t}`).join('\n') : diagnosis.recommendedTreatment || 'استشر خبيراً.'}
+${Array.isArray(diagnosis.recommendedTreatment) ? diagnosis.recommendedTreatment.map(t => `• ${t}`).join('\n') : diagnosis.recommendedTreatment}
 
 🛡️ *الوقاية:*
-${Array.isArray(diagnosis.preventativeMeasures) ? diagnosis.preventativeMeasures.map(p => `• ${p}`).join('\n') : diagnosis.preventativeMeasures || 'الالتزام بالنظافة الدورية.'}
+${Array.isArray(diagnosis.preventativeMeasures) ? diagnosis.preventativeMeasures.map(p => `• ${p}`).join('\n') : diagnosis.preventativeMeasures}
 
-${!user.isPaid ? `📉 المحاولات المتبقية: ${user.freeScans}` : '♾️ اشتراك غير محدود فعال'}`;
+${!user.isPaid ? `📉 المحاولات المتبقية: ${user.freeScans}` : '♾️ اشتراك فعال (غير محدود)'}`;
 
         bot.sendMessage(chatId, msgContent, { parse_mode: 'Markdown' });
 
     } catch (error) {
         console.error("Analysis Error:", error);
-        bot.sendMessage(chatId, "❌ نعتذر، حدث خطأ أثناء تحليل الصورة. تأكد من جودة الصورة وحاول مجدداً.");
+        bot.sendMessage(chatId, "❌ حدث خطأ في التحليل. يرجى المحاولة بصورة أوضح.");
     }
 });
 
-// Handle text messages for potential payments
 bot.on('message', (msg) => {
     if (msg.photo || (msg.text && msg.text.startsWith('/'))) return;
-    
     const user = getUser(msg.chat.id);
     if (!user.isPaid && user.freeScans <= 0) {
         if (ADMIN_ID) {
-            bot.sendMessage(ADMIN_ID, `📩 *رسالة دفع محتملة:*
-من: \`${msg.chat.id}\`
-النص: ${msg.text}
-لتفعيل الحساب، أرسل: \`/activate ${msg.chat.id}\``, { parse_mode: 'Markdown' });
+            bot.sendMessage(ADMIN_ID, `📩 *طلب تفعيل:*
+ID: \`${msg.chat.id}\`
+الرسالة: ${msg.text}
+التفعيل: \`/activate ${msg.chat.id}\``, { parse_mode: 'Markdown' });
         }
-        bot.sendMessage(msg.chat.id, "⏳ شكراً لك. تم إرسال بياناتك للمراجعة. سيتم تفعيل حسابك فور التأكد من عملية الدفع.");
+        bot.sendMessage(msg.chat.id, "⏳ شكراً. جاري مراجعة طلب التفعيل الخاص بك.");
     }
 });
 
-console.log("🚀 BeeSenseBot v3 (Fixed Protocol) Started.");
+console.log("🚀 BeeSenseBot v3 (Polling Managed) Started.");
