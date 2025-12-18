@@ -250,7 +250,7 @@ async function handleImageAnalysis(chatId, photoId) {
         const ai = getAIClient(); 
         
         aiResult = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
+          model: "gemini-3-flash-preview",
           contents: {
             parts: [
               { inlineData: { mimeType: "image/jpeg", data: base64Image } },
